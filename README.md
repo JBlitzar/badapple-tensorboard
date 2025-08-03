@@ -10,6 +10,7 @@ Bad apple played in Tensorboard scalars.
 
 - Clone, cd in
 - Install tensorboard
+- unzip runs.tar.xz
 - `tensorboard --logdir runs`
 
 ```
