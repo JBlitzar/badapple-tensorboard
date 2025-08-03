@@ -10,6 +10,7 @@ import zipfile
 import argparse
 from datetime import datetime
 from tqdm import trange
+import glob
 
 
 class FrameCapture:
@@ -64,7 +65,7 @@ class FrameCapture:
 
             # Create directory structure
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            frames_dir = f"frames_{timestamp}"
+            frames_dir = "frames_rendered"  # f"frames_{timestamp}"
             os.makedirs(frames_dir, exist_ok=True)
 
             total_frames = max_frame - start_frame + 1
@@ -131,8 +132,19 @@ class FrameCapture:
             # compile into video with ffmpeg
             # compile into video with ffmpeg
             print("Compiling frames into video...")
+            # Find the lowest frame number from actual files
+            frame_files = glob.glob(os.path.join(frames_dir, "frame_*.png"))
+            if frame_files:
+                frame_numbers = [
+                    int(os.path.basename(f).split("_")[1].split(".")[0])
+                    for f in frame_files
+                ]
+                first_frame = min(frame_numbers)
+            else:
+                first_frame = start_frame
+
             os.system(
-                f"ffmpeg -framerate 30 -start_number {start_frame} -i {frames_dir}/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -vf scale=1920:1080 frames_{timestamp}.mp4"
+                f"ffmpeg -framerate 30 -start_number {first_frame} -i {frames_dir}/frame_%04d.png -c:v libx264 -pix_fmt yuv420p -vf scale=1920:1080 frames_{timestamp}.mp4"
             )
 
             # Create zip archive
@@ -174,7 +186,7 @@ class FrameCapture:
 def main():
     parser = argparse.ArgumentParser(description="Capture frames using Selenium")
     parser.add_argument("url", help="URL of the page to capture")
-    parser.add_argument("--start", type=int, default=43, help="Starting frame number")
+    parser.add_argument("--start", type=int, default=2354, help="Starting frame number")
     parser.add_argument("--end", type=int, default=6571, help="Ending frame number")
     parser.add_argument(
         "--delay", type=int, default=200, help="Delay between frames (ms)"
