@@ -93,10 +93,70 @@ class FrameCapture:
             if driver:
                 driver.quit()
 
+    def capture_worker(self, frame_queue, frames_dir, screenshot_delay=0.5):
+        """Worker function that processes frames with a persistent browser instance"""
+        driver = None
+        try:
+            driver = self.setup_driver()
+            driver.get(self.url)
+
+            # Wait for initial page load
+            wait = WebDriverWait(driver, 10)
+            input_element = wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, 'input[placeholder="Filter tags (regex)"]')
+                )
+            )
+
+            while True:
+                try:
+                    frame_num = frame_queue.get(timeout=1)
+                    if frame_num is None:  # Poison pill to stop worker
+                        break
+
+                    padded = str(frame_num).zfill(4)
+                    value = f"frame_{padded}"
+
+                    # Clear input and set new value
+                    input_element.clear()
+                    input_element.send_keys(value)
+
+                    # Trigger events
+                    driver.execute_script(
+                        """
+                        arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+                        arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+                    """,
+                        input_element,
+                    )
+
+                    # Wait for page to update
+                    time.sleep(screenshot_delay)
+
+                    # Take screenshot
+                    screenshot_path = os.path.join(frames_dir, f"frame_{padded}.png")
+                    success = driver.save_screenshot(screenshot_path)
+
+                    if success:
+                        with self.lock:
+                            self.screenshots_taken += 1
+
+                    frame_queue.task_done()
+
+                except Exception as e:
+                    print(f"Error processing frame {frame_num}: {e}")
+                    frame_queue.task_done()
+
+        except Exception as e:
+            print(f"Worker error: {e}")
+        finally:
+            if driver:
+                driver.quit()
+
     def capture_frames(
         self, start_frame=43, max_frame=6571, delay_ms=200, screenshot_delay=0.5
     ):
-        """Main frame capture function with concurrent execution"""
+        """Main frame capture function with persistent browser instances"""
 
         # Create directory structure
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -106,50 +166,54 @@ class FrameCapture:
         total_frames = max_frame - start_frame + 1
         print(f"Starting concurrent capture of {total_frames} frames...")
         print(f"Range: frame_{start_frame:04d} to frame_{max_frame:04d}")
-        print(f"Using {self.max_workers} concurrent workers")
+        print(f"Using {self.max_workers} persistent browser workers")
+
+        # Create queue and add all frame numbers
+        frame_queue = Queue()
+        for frame_num in range(start_frame, max_frame + 1):
+            frame_queue.put(frame_num)
 
         start_time = time.time()
-        frame_range = range(start_frame, max_frame + 1)
 
-        # Use ThreadPoolExecutor for concurrent execution
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.max_workers
-        ) as executor:
-            # Submit all frame capture tasks
-            future_to_frame = {
-                executor.submit(
-                    self.capture_single_frame, frame_num, frames_dir, screenshot_delay
-                ): frame_num
-                for frame_num in frame_range
-            }
+        # Start worker threads
+        workers = []
+        for i in range(self.max_workers):
+            worker = threading.Thread(
+                target=self.capture_worker,
+                args=(frame_queue, frames_dir, screenshot_delay),
+            )
+            worker.start()
+            workers.append(worker)
 
-            # Process completed tasks with progress bar
-            completed = 0
-            with tqdm(
-                total=total_frames, desc="Capturing frames", unit="frame"
-            ) as pbar:
-                for future in concurrent.futures.as_completed(future_to_frame):
-                    frame_num = future_to_frame[future]
-                    try:
-                        frame_result, success = future.result()
-                        completed += 1
-                        pbar.update(1)
+        # Monitor progress
+        with tqdm(total=total_frames, desc="Capturing frames", unit="frame") as pbar:
+            last_completed = 0
+            while self.screenshots_taken < total_frames and any(
+                w.is_alive() for w in workers
+            ):
+                time.sleep(0.1)
+                current_completed = self.screenshots_taken
+                if current_completed > last_completed:
+                    pbar.update(current_completed - last_completed)
+                    elapsed = time.time() - start_time
+                    rate = current_completed / elapsed if elapsed > 0 else 0
+                    pbar.set_postfix(
+                        {
+                            "rate": f"{rate:.1f} fps",
+                            "remaining": frame_queue.qsize(),
+                        }
+                    )
+                    last_completed = current_completed
 
-                        # Update progress info
-                        elapsed = time.time() - start_time
-                        rate = completed / elapsed if elapsed > 0 else 0
-                        pbar.set_postfix(
-                            {
-                                "rate": f"{rate:.1f} fps",
-                                "completed": completed,
-                                "success": self.screenshots_taken,
-                            }
-                        )
+        # Wait for all frames to complete
+        frame_queue.join()
 
-                    except Exception as exc:
-                        print(f"Frame {frame_num} generated an exception: {exc}")
-                        completed += 1
-                        pbar.update(1)
+        # Stop workers
+        for _ in range(self.max_workers):
+            frame_queue.put(None)  # Poison pill
+
+        for worker in workers:
+            worker.join()
 
         elapsed_total = time.time() - start_time
         print(f"\nScreenshot capture complete!")
@@ -204,7 +268,7 @@ class FrameCapture:
 def main():
     parser = argparse.ArgumentParser(description="Capture frames using Selenium")
     parser.add_argument("url", help="URL of the page to capture")
-    parser.add_argument("--start", type=int, default=3228, help="Starting frame number")
+    parser.add_argument("--start", type=int, default=3945, help="Starting frame number")
     parser.add_argument("--end", type=int, default=6571, help="Ending frame number")
     parser.add_argument(
         "--delay", type=int, default=200, help="Delay between frames (ms)"
