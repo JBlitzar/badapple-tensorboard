@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 
 def frame_to_scalar_curves(image_path):
-    """Convert a Bad Apple frame to multiple scalar curves"""
+    """Convert a Bad Apple frame to multiple scalar curves based on black-white transitions"""
     # Load the image
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img is None:
@@ -16,21 +16,26 @@ def frame_to_scalar_curves(image_path):
     # Threshold to binary (Bad Apple is high contrast)
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
 
-    # Find all black pixels for each x coordinate
+    # Find transitions from black to white or white to black
     height, width = binary.shape
     x_sample = np.arange(width)
     all_curves = {}  # Dictionary to store multiple curves
 
     for x in range(width):
-        black_pixels = []
-        # Find ALL black pixels in this column
-        for y in range(height):
-            if binary[y, x] == 0:  # Black pixel found
-                black_pixels.append(y)
+        transitions = []
+        # Find transitions in this column
+        for y in range(height - 1):  # -1 because we check y+1
+            current_pixel = binary[y, x]
+            next_pixel = binary[y + 1, x]
 
-        # Create separate curves for each black pixel in this column
-        for i, y_pos in enumerate(black_pixels):
-            curve_name = f"curve_{i}"
+            # Check for transition (black to white or white to black)
+            if current_pixel != next_pixel:
+                # Record the y position of the transition
+                transitions.append(y + 0.5)  # Transition happens between pixels
+
+        # Create separate curves for each transition in this column
+        for i, y_pos in enumerate(transitions):
+            curve_name = f"transition_{i}"
             if curve_name not in all_curves:
                 all_curves[curve_name] = np.full(width, np.nan)
             all_curves[curve_name][x] = y_pos
@@ -66,7 +71,7 @@ def log_frame_to_tensorboard(writers, frame_path, frame_number):
 
             break
 
-        print(f"Logged {metric_name} with {len(all_curves)} curves")
+        tqdm.write(f"Logged {metric_name} with {len(all_curves)} transition curves")
 
     except Exception as e:
         print(f"Error processing frame {frame_path}: {e}")
@@ -100,7 +105,7 @@ def log_badapple_sequence(frames_dir, log_dir="runs/badapple"):
         # Close all writers
         for writer in writers.values():
             writer.close()
-        print(f"\nDone! Created {len(writers)} curve runs")
+        print(f"\nDone! Created {len(writers)} transition curve runs")
         print(f"Each run contains {len(frame_files)} frame metrics")
         print(f"View with: tensorboard --logdir={log_dir}")
 
@@ -119,7 +124,7 @@ def log_single_frame_demo(frame_path, log_dir="runs/badapple_demo"):
         # Close all writers
         for writer in writers.values():
             writer.close()
-        print(f"Demo logged with {len(writers)} curve runs!")
+        print(f"Demo logged with {len(writers)} transition curve runs!")
         print(f"Each run contains the metric '{frame_path.split('_')[1]}'")
         print(f"View with: tensorboard --logdir={log_dir}")
 
