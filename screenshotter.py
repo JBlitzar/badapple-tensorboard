@@ -186,7 +186,7 @@ class FrameCapture:
 def main():
     parser = argparse.ArgumentParser(description="Capture frames using Selenium")
     parser.add_argument("url", help="URL of the page to capture")
-    parser.add_argument("--start", type=int, default=2354, help="Starting frame number")
+    parser.add_argument("--start", type=int, default=3228, help="Starting frame number")
     parser.add_argument("--end", type=int, default=6571, help="Ending frame number")
     parser.add_argument(
         "--delay", type=int, default=200, help="Delay between frames (ms)"
