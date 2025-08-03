@@ -1,10 +1,13 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy import ndimage
+import os
+from torch.utils.tensorboard import SummaryWriter
+import glob
+from tqdm import tqdm
 
 
 def frame_to_scalar_curves(image_path):
+    """Convert a Bad Apple frame to multiple scalar curves"""
     # Load the image
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     if img is None:
@@ -35,100 +38,106 @@ def frame_to_scalar_curves(image_path):
     return x_sample, all_curves
 
 
-def plot_scalar_curves(x_data, all_curves, original_image_path):
-    # Load image to get dimensions
-    img = cv2.imread(original_image_path, cv2.IMREAD_GRAYSCALE)
-    height, width = img.shape
+def log_frame_to_tensorboard(writers, frame_path, frame_number):
+    """Log a single Bad Apple frame as scalar curves to TensorBoard"""
+    try:
+        x_data, all_curves = frame_to_scalar_curves(frame_path)
 
-    # Calculate aspect ratio and determine padding needed
-    aspect_ratio = width / height
-    target_width = max(width, int(height * 1.5))  # Assume target aspect ratio ~1.5
+        # Create unique metric name for this frame
+        metric_name = f"frame_{frame_number:04d}"
 
-    if target_width > width:
-        # Need to pad horizontally
-        pad_total = target_width - width
-        pad_left = pad_total // 2
-        pad_right = pad_total - pad_left
-
-        # Create padded x_data
-        x_padded = np.arange(-pad_left, width + pad_right)
-
-        # Pad all curves with zeros (top of image)
-        padded_curves = {}
+        # Log each curve to its own run
         for curve_name, y_data in all_curves.items():
-            padded_y = np.full(len(x_padded), 0.0)  # Fill with zeros (top edge)
-            # Copy original data to center
-            padded_y[pad_left : pad_left + width] = np.nan_to_num(y_data, nan=0.0)
-            padded_curves[curve_name] = padded_y
-    else:
-        x_padded = x_data
-        padded_curves = all_curves
+            # Get or create writer for this curve
+            if curve_name not in writers:
+                writers[curve_name] = SummaryWriter(f"runs/badapple/{curve_name}")
 
-    # Create subplot
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+            writer = writers[curve_name]
 
-    # Show original image with correct aspect ratio
-    ax1.imshow(img, cmap="gray", aspect="equal")
-    ax1.set_title("Original Bad Apple Frame")
-    ax1.axis("off")
+            # Log all xy data for this frame as scalars with x as the step
+            for x, y in enumerate(y_data):
+                if not np.isnan(y):  # Only log valid points
+                    writer.add_scalar(metric_name, -y, x)  # x becomes the step!
 
-    # Plot all scalar curves with padding
-    colors = plt.cm.tab10(np.linspace(0, 1, len(padded_curves)))
-    for (curve_name, y_data), color in zip(padded_curves.items(), colors):
-        # Only plot non-zero values (since zeros are padding)
-        valid_mask = y_data > 0
-        if np.any(valid_mask):
-            ax2.plot(
-                x_padded[valid_mask],
-                y_data[valid_mask],
-                color=color,
-                linewidth=1,
-                alpha=0.7,
-                label=curve_name,
-            )
+        for curve_name, y_data in all_curves.items():
+            writer = writers[curve_name]
+            for x in x_data:
+                writer.add_scalar(metric_name, 0, x)
 
-    ax2.set_xlabel("X Position (pixels)")
-    ax2.set_ylabel("Y Position (pixels)")
-    ax2.set_title(f"Multiple Scalar Curves ({len(padded_curves)} curves)")
-    ax2.grid(True, alpha=0.3)
+            break
 
-    # Set equal aspect ratio for the curve plot too
-    ax2.set_aspect("equal")
+        print(f"Logged {metric_name} with {len(all_curves)} curves")
 
-    # Flip y-axis to match image coordinates
-    ax2.invert_yaxis()
+    except Exception as e:
+        print(f"Error processing frame {frame_path}: {e}")
 
-    # Add legend if not too many curves
-    if len(padded_curves) <= 10:
-        ax2.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
 
-    plt.tight_layout()
-    plt.show()
+def log_badapple_sequence(frames_dir, log_dir="runs/badapple"):
+    """Log entire Bad Apple sequence to TensorBoard"""
+
+    # Dictionary to hold writers for each curve
+    writers = {}
+
+    # Get all frame files
+    frame_files = sorted(glob.glob(os.path.join(frames_dir, "*.jpg")))
+
+    if not frame_files:
+        print(f"No .jpg files found in {frames_dir}")
+        return
+
+    print(f"Found {len(frame_files)} frames")
+
+    try:
+        # Process each frame
+        for frame_num, frame_path in enumerate(tqdm(frame_files)):
+            log_frame_to_tensorboard(writers, frame_path, frame_num)
+
+            # Progress update
+            if (frame_num + 1) % 10 == 0:
+                print(f"Processed {frame_num + 1}/{len(frame_files)} frames")
+
+    finally:
+        # Close all writers
+        for writer in writers.values():
+            writer.close()
+        print(f"\nDone! Created {len(writers)} curve runs")
+        print(f"Each run contains {len(frame_files)} frame metrics")
+        print(f"View with: tensorboard --logdir={log_dir}")
+
+
+def log_single_frame_demo(frame_path, log_dir="runs/badapple_demo"):
+    """Log a single frame as demo (for testing)"""
+    writers = {}
+
+    try:
+        # Log just one frame
+        log_frame_to_tensorboard(
+            writers, frame_path, int(frame_path.split("_")[1].split(".")[0])
+        )  # Use actual frame number
+
+    finally:
+        # Close all writers
+        for writer in writers.values():
+            writer.close()
+        print(f"Demo logged with {len(writers)} curve runs!")
+        print(f"Each run contains the metric '{frame_path.split('_')[1]}'")
+        print(f"View with: tensorboard --logdir={log_dir}")
 
 
 if __name__ == "__main__":
-    image_path = "frames/output_0145.jpg"
+    # Demo with single frame first
+    # single_frame = "frames/output_0145.jpg"
 
-    try:
-        x_data, all_curves = frame_to_scalar_curves(image_path)
+    # if os.path.exists(single_frame):
+    #     print("Logging single frame demo...")
+    #     log_single_frame_demo(single_frame)
+    # else:
+    #     print(f"Frame {single_frame} not found")
 
-        if x_data is not None and all_curves:
-            plot_scalar_curves(x_data, all_curves, image_path)
-
-            # Print some sample values for TensorBoard format
-            print(f"\nFound {len(all_curves)} scalar curves")
-            print("\nSample scalar values for TensorBoard:")
-
-            # Show sample from first few curves
-            for curve_name, y_data in list(all_curves.items())[:3]:
-                print(f"\n{curve_name}:")
-                valid_indices = ~np.isnan(y_data)
-                sample_indices = np.where(valid_indices)[0][:: len(x_data) // 10]
-                for i in sample_indices[:5]:  # Show first 5 samples
-                    print(f"  {curve_name}_x{i:03d}: {y_data[i]:.1f}")
-        else:
-            print("Failed to extract curves from image")
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-        print("Make sure the image file exists at the specified path")
+    # Uncomment to process entire sequence:
+    frames_directory = "frames"
+    if os.path.exists(frames_directory):
+        print("Logging entire Bad Apple sequence...")
+        log_badapple_sequence(frames_directory)
+    else:
+        print(f"Frames directory {frames_directory} not found")
