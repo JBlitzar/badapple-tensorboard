@@ -1,0 +1,12 @@
+[project]
+name = "badapple-tensorboard"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.10.5",
+    "opencv-python>=4.12.0.88",
+    "scipy>=1.16.1",
+    "tensorboard>=2.20.0",
+]
