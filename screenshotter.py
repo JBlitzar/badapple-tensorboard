@@ -17,7 +17,13 @@ from queue import Queue
 
 
 class FrameCapture:
-    def __init__(self, url, headless=False, window_size="1920,1080", max_workers=4):
+    def __init__(
+        self,
+        url="http://localhost:6006",
+        headless=True,
+        window_size="1920,1080",
+        max_workers=4,
+    ):
         self.url = url
         self.headless = headless
         self.window_size = window_size
@@ -267,8 +273,10 @@ class FrameCapture:
 
 def main():
     parser = argparse.ArgumentParser(description="Capture frames using Selenium")
-    parser.add_argument("url", help="URL of the page to capture")
-    parser.add_argument("--start", type=int, default=3945, help="Starting frame number")
+    parser.add_argument(
+        "url", default="http://localhost:6006", help="URL of the page to capture"
+    )
+    parser.add_argument("--start", type=int, default=43, help="Starting frame number")
     parser.add_argument("--end", type=int, default=6571, help="Ending frame number")
     parser.add_argument(
         "--delay", type=int, default=200, help="Delay between frames (ms)"
