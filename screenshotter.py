@@ -15,6 +15,8 @@ import concurrent.futures
 import threading
 from queue import Queue
 
+# Such vibe coded.
+
 
 class FrameCapture:
     def __init__(
