@@ -4,7 +4,8 @@ Bad apple played in Tensorboard scalars. Awful code hacked together, but pretty 
 
 ## Video (Flashing warning)
 
-![video](https://github.com/JBlitzar/badapple-tensorboard/raw/refs/heads/main/frames_20250817_172506.mp4)
+https://github.com/user-attachments/assets/a93e870e-036a-481c-bcf5-1068eb4c8b73
+
 
 ## Installation
 
