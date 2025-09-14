@@ -1,6 +1,6 @@
 # badapple-tensorboard
 
-Bad apple played in Tensorboard scalars. Awful code hacked together, but pretty fun.
+Bad apple video played in Tensorboard scalar plots. Awful code hacked together, but pretty fun.
 
 ## Video (Flashing warning)
 
